@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+         <template id="culqi_payment_tokens_list" inherit_id="payment.payment_tokens_list">
+             <xpath expr="//form" position="before">
+                 <head>
+                    <script src="https://checkout.culqi.com/js/v3"/>
+                </head>
+             </xpath>
+             <xpath expr="//form" position="after">
+                 <script>
+                     function culqi() {
+                        if (Culqi.token) {
+                            let token = Culqi.token.id;
+                            let email = Culqi.token.email;
+                            odoo.define('payment_culqi.payment_receive_form', function (require) {
+                                "use strict";
+                                let ajax = require('web.ajax');
+                                let core = require('web.core');
+                                let values = get_charge();
+                                values.culqi_token = token;
+                                values.email = email;
+                                values.acquirer_id = 0;
+                                values.provider = 'culqi'
+                                $("div#wrap").append('<div id="preloader"><div id="status">.</div></div>');
+                                ajax.jsonRpc('/shop/culqi', 'call', values).then(function(){
+                                    $('#status').delay(100).fadeOut();
+                                    $('#preloader').delay(100).fadeOut('slow');
+                                    window.location.href = `${window.location.origin}/shop/confirmation`;
+                                }).then(function(){
+                                    $('body').delay(100).css({'overflow':'visible'});
+                                });
+
+                            });
+                        }
+                        else {
+                            console.log(Culqi.error);
+                            alert(Culqi.error.user_message);
+                        }
+                     };
+
+                     function get_charge(){
+                        let $currency_value = $("span[data-oe-field='amount_total']").find("span.oe_currency_value");
+                        let currency_value = $currency_value.length? $currency_value[0].textContent : 0;
+                        if (!currency_value){
+                            $currency_value = $("#order_total").find("span.oe_currency_value");
+                            currency_value = $currency_value.length? $currency_value[0].textContent.replace(",", "") : 0;
+                        }
+
+                        let amount_total = Math.round(parseFloat(currency_value) * 100);
+                        let description = "";
+                        $("strong[data-oe-model='product.product']").each(function(){
+                            description +=  this.textContent + "\n";
+                        });
+                        if(!description){
+                            $(".td-product_name").find("strong").each(function(index, el){
+                                description += el.textContent + "/"
+                            });
+                        }
+                        email = $("input[name='cardEmail']").value;
+                        return { amount_total , description, email}
+                     }
+
+                     $('#o_payment_form_pay').on('click', function(e) {
+                        if(!$("input:radio[data-provider='culqi']").is(':checked')){
+                            return;
+                        }
+                        odoo.define('payment_culqi.payment_form', function (require) {
+                            "use strict";
+                            let ajax = require('web.ajax');
+                            let core = require('web.core');
+
+                            ajax.jsonRpc('/payment/culqi/keys', 'call').then(function (data) {
+                                if(!data.brq_websitekey){
+                                    console.log("No es posible pagar por Culqi")
+                                }
+                                Culqi.publicKey = data.brq_websitekey;
+                                let values = get_charge();
+                                let description = values.description;
+                                let amount_total = values.amount_total;
+
+                                Culqi.settings({
+                                    title: 'Pago Culqi',
+                                    currency: 'PEN',
+                                    description: description,
+                                    amount: amount_total
+                                });
+                                Culqi.open();
+                                e.preventDefault();
+                            });
+                        });
+                    });
+                </script>
+             </xpath>
+         </template>
+        <template id="culqi_acquirer_button">
+            <form t-if="acquirer.culqi_email_account" t-att-action="tx_url" method="post" target="_self">
+                <input type="hidden" name="cmd" t-att-value="cmd"/>
+                <input type="hidden" name="business" t-att-value="business"/>
+                <input type="hidden" name="item_name" t-att-value="item_name"/>
+                <input type="hidden" name="item_number" t-att-value="item_number"/>
+                <input type="hidden" name="amount" t-att-value="amount"/>
+                <input t-if="handling" type="hidden" name="handling"
+                    t-att-value="handling"/>
+                <input type="hidden" name="currency_code" t-att-value="currency_code"/>
+                <!-- partner / address data -->
+                <input type="hidden" name="address1" t-att-value="address1"/>
+                <input type="hidden" name="city" t-att-value="city"/>
+                <input type="hidden" name="country" t-att-value="country"/>
+                <input type="hidden" name="email" t-att-value="email"/>
+                <input type="hidden" name="first_name" t-att-value="first_name"/>
+                <input type="hidden" name="last_name" t-att-value="last_name"/>
+                <input type="hidden" name="zip" t-att-value="zip_code"/>
+                <input t-if='state' type='hidden' name="state"
+                    t-att-value='state'/>
+                <!-- after payment parameters -->
+                <input t-if='custom' type='hidden' name="custom"
+                    t-att-value='custom'/>
+                <!-- URLs -->
+                <input t-if="culqi_return" type='hidden' name='return'
+                    t-att-value="culqi_return"/>
+                <input t-if="acquirer.culqi_use_ipn" type='hidden' name='notify_url'
+                    t-att-value="notify_url"/>
+                <input t-if="cancel_return" type="hidden" name="cancel_return"
+                    t-att-value="cancel_return"/>
+                <!-- submit -->
+                <button type="submit" width="100px"
+                    t-att-class="submit_class">
+                    <img t-if="not submit_txt" src="/payment_culqi/static/src/img/culqi_icon.png"/>
+                    <span t-if="submit_txt"><t t-esc="submit_txt"/> <span class="fa fa-long-arrow-right"/></span>
+                </button>
+            </form>
+        </template>
+    </data>
+</odoo>
